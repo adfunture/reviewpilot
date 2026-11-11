@@ -18,7 +18,7 @@ ReviewPilot synchronisiert Bestellungen aus Shopify und ermittelt den echten Zus
 | Google Kundenrezensionen | 📄 Einrichtungsanleitung (Google versendet selbst) |
 | Google-Unternehmensprofil | ✅ **Hauptkanal** (100 %), eine Anfrage pro Bestellung, Link hinterlegt (`g.page/r/CQuEv013N0m2EBM/review`) |
 | idealo | ✅ Shop-Bewertungsformular (`ShopRatingForm/336477`), nur für über idealo vermittelte Bestellungen – diese bekommen idealo **statt** Google, mit Bestellnummer in der Mail |
-| Tests | ✅ 80 automatisierte Tests (Fachlogik + Integration gegen echtes Postgres) |
+| Tests | ✅ 83 automatisierte Tests (Fachlogik + Integration gegen echtes Postgres) |
 | Railway | ✅ Dockerfile + IaC, **noch nicht deployt** |
 
 ## Architektur
