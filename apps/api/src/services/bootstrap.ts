@@ -1,6 +1,6 @@
 import type { IntegrationType, PlatformKey, SalesChannel } from "@prisma/client";
 import { DEFAULT_MAPPING_RULES } from "../domain/attribution.js";
-import { DEFAULT_TEMPLATES, GOOGLE_BUSINESS_TEMPLATES } from "../email/render.js";
+import { DEFAULT_TEMPLATES, GOOGLE_BUSINESS_TEMPLATES, IDEALO_TEMPLATES } from "../email/render.js";
 import { db } from "../lib/db.js";
 
 interface PlatformDefault {
@@ -45,7 +45,7 @@ export const PLATFORM_DEFAULTS: PlatformDefault[] = [
     priority: 20,
     targetShare: 0,
     onlyForChannels: ["IDEALO"],
-    notes: "Keine öffentliche Einladungs-API gefunden. Offiziellen Bewertungslink und Regeln bei idealo business erfragen. Standard: nur für über idealo vermittelte Bestellungen.",
+    notes: "Shop-Bewertungsformular (ShopRatingForm). Keine Einladungs-API. Nur für über idealo vermittelte Bestellungen – diese erhalten dann die idealo- statt der Google-Anfrage. Das Formular verlangt die Bestellnummer.",
   },
   {
     key: "TRUSTED_SHOPS",
@@ -114,13 +114,15 @@ export async function ensureShop(shopifyDomain: string, name: string): Promise<s
       update: {},
     });
   }
-  const google = await prisma.reviewPlatform.findUniqueOrThrow({ where: { shopId_key: { shopId: shop.id, key: "GOOGLE_BUSINESS" } } });
-  for (const t of GOOGLE_BUSINESS_TEMPLATES) {
-    await prisma.emailTemplate.upsert({
-      where: { shopId_scope_step: { shopId: shop.id, scope: "GOOGLE_BUSINESS", step: t.step } },
-      create: { shopId: shop.id, scope: "GOOGLE_BUSINESS", platformId: google.id, step: t.step, subject: t.subject, bodyText: t.body },
-      update: {},
-    });
+  for (const [key, templates] of [["GOOGLE_BUSINESS", GOOGLE_BUSINESS_TEMPLATES], ["IDEALO", IDEALO_TEMPLATES]] as const) {
+    const platform = await prisma.reviewPlatform.findUniqueOrThrow({ where: { shopId_key: { shopId: shop.id, key } } });
+    for (const t of templates) {
+      await prisma.emailTemplate.upsert({
+        where: { shopId_scope_step: { shopId: shop.id, scope: key, step: t.step } },
+        create: { shopId: shop.id, scope: key, platformId: platform.id, step: t.step, subject: t.subject, bodyText: t.body },
+        update: {},
+      });
+    }
   }
   const existingRules = await prisma.channelMappingRule.count({ where: { shopId: shop.id } });
   if (existingRules === 0) {

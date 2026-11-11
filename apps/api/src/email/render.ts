@@ -172,3 +172,61 @@ Vielen Dank und liebe Grüße
 Dein Adfunture-Team`,
   },
 ];
+
+/**
+ * Vorlagen für idealo (Scope "IDEALO"). Das idealo-Formular verlangt die Bestellnummer – sie steht deshalb in der Mail.
+ */
+export const IDEALO_TEMPLATES: { step: number; subject: string; body: string }[] = [
+  {
+    step: 1,
+    subject: "Du hast über idealo bei Adfunture bestellt – wie war dein Einkauf?",
+    body: `Hallo {{first_name}},
+
+vielen Dank für deine Bestellung bei Adfunture, die du über idealo gefunden hast!
+
+Wir hoffen, dass alles gut bei dir angekommen ist.
+
+Wir würden uns freuen, wenn du deine Erfahrung mit uns auf idealo teilst – ganz gleich, wie sie ausgefallen ist. Deine ehrliche Meinung hilft anderen bei der Wahl des passenden Shops.
+
+{{review_link}}
+
+idealo fragt im Formular nach deiner Bestellnummer: {{order_name}}
+
+Vielen Dank für deine Unterstützung!
+
+Liebe Grüße
+Dein Adfunture-Team`,
+  },
+  {
+    step: 2,
+    subject: "Deine Meinung zu Adfunture ist uns wichtig",
+    body: `Hallo {{first_name}},
+
+vor einigen Tagen haben wir dich gebeten, deine Erfahrung mit Adfunture auf idealo zu teilen.
+
+Falls du noch nicht dazu gekommen bist, freuen wir uns über dein ehrliches Feedback.
+
+{{review_link}}
+
+Deine Bestellnummer für das Formular: {{order_name}}
+
+Vielen Dank!
+
+Liebe Grüße
+Dein Adfunture-Team`,
+  },
+  {
+    step: 3,
+    subject: "Eine letzte Bitte um dein Feedback",
+    body: `Hallo {{first_name}},
+
+wir möchten dich ein letztes Mal einladen, deine Einkaufserfahrung bei Adfunture auf idealo zu bewerten.
+
+{{review_link}}
+
+Deine Bestellnummer für das Formular: {{order_name}}
+
+Vielen Dank und liebe Grüße
+Dein Adfunture-Team`,
+  },
+];

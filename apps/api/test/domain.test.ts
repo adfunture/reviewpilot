@@ -5,7 +5,7 @@ import { deriveDelivery, type FulfillmentInput } from "../src/domain/delivery.js
 import { planCampaign, resolveSendTime, selectPlatform, stepDates, type PlanInput, type PlatformOption, type RuleSettings } from "../src/domain/planner.js";
 import { reminderDecision } from "../src/domain/reminders.js";
 import { formatDateDe, intoSendWindow } from "../src/domain/time.js";
-import { DEFAULT_TEMPLATES, findUnknownPlaceholders, GOOGLE_BUSINESS_TEMPLATES, renderEmail } from "../src/email/render.js";
+import { DEFAULT_TEMPLATES, findUnknownPlaceholders, GOOGLE_BUSINESS_TEMPLATES, IDEALO_TEMPLATES, renderEmail } from "../src/email/render.js";
 import { reviewUrlProblem, templatePolicyProblems } from "../src/domain/platformLinks.js";
 import { normalizeOrder } from "../src/shopify/mapper.js";
 import { orderGidFromWebhook, verifyShopifyHmac } from "../src/shopify/webhooks.js";
@@ -135,12 +135,18 @@ describe("Plattformwahl", () => {
     expect(selectPlatform("x", "GOOGLE_SHOPPING", [IDEALO])).toBeNull();
     expect(selectPlatform("x", "IDEALO", [IDEALO])?.key).toBe("IDEALO");
   });
-  it("deterministisch und gewichtet (≈ Zielanteile)", () => {
-    const counts = { GOOGLE_BUSINESS: 0, IDEALO: 0 } as Record<string, number>;
-    for (let i = 0; i < 4000; i++) counts[selectPlatform(`order-${i}`, "IDEALO", [GOOGLE, IDEALO])!.key]!++;
+  it("idealo-Bestellung → idealo hat Vorrang vor Google; andere Bestellungen → Google", () => {
+    for (let i = 0; i < 50; i++) expect(selectPlatform(`order-${i}`, "IDEALO", [GOOGLE, IDEALO])?.key).toBe("IDEALO");
+    expect(selectPlatform("x", "GOOGLE_SHOPPING", [GOOGLE, IDEALO])?.key).toBe("GOOGLE_BUSINESS");
+    expect(selectPlatform("x", "IDEALO", [GOOGLE, { ...IDEALO, active: false }])?.key).toBe("GOOGLE_BUSINESS");
+  });
+  it("deterministisch und gewichtet (≈ Zielanteile) unter allgemeinen Plattformen", () => {
+    const TP: PlatformOption = { ...GOOGLE, id: "p-tp", key: "TRUSTPILOT", targetShare: 30, priority: 40 };
+    const counts = { GOOGLE_BUSINESS: 0, TRUSTPILOT: 0 } as Record<string, number>;
+    for (let i = 0; i < 4000; i++) counts[selectPlatform(`order-${i}`, "DIRECT", [GOOGLE, TP])!.key]!++;
     expect(counts.GOOGLE_BUSINESS! / 4000).toBeGreaterThan(0.57);
     expect(counts.GOOGLE_BUSINESS! / 4000).toBeLessThan(0.68); // 50/(50+30) = 62,5 %
-    expect(selectPlatform("order-7", "IDEALO", [GOOGLE, IDEALO])).toEqual(selectPlatform("order-7", "IDEALO", [GOOGLE, IDEALO]));
+    expect(selectPlatform("order-7", "DIRECT", [GOOGLE, TP])).toEqual(selectPlatform("order-7", "DIRECT", [GOOGLE, TP]));
   });
   it("Plattformen, die selbst versenden, werden nie für eigene E-Mails gewählt", () => {
     expect(selectPlatform("x", "UNKNOWN", [{ ...GOOGLE, integrationType: "EXTERNAL_PROGRAM" }])).toBeNull();
@@ -251,9 +257,11 @@ describe("Google-Unternehmensprofil", () => {
     expect(reviewUrlProblem("GOOGLE_BUSINESS", "https://maps.app.goo.gl/xyz")).toMatch(/Kein Google-Bewertungslink/);
     expect(reviewUrlProblem("GOOGLE_BUSINESS", "https://www.google.com/maps/place/Adfunture")).not.toBeNull();
     expect(reviewUrlProblem("GOOGLE_BUSINESS", "https://search.google.com/local/writereview?placeid=")).not.toBeNull();
+    expect(reviewUrlProblem("IDEALO", "https://www.idealo.de/preisvergleich/ShopRatingForm/336477.html")).toBeNull();
+    expect(reviewUrlProblem("IDEALO", "https://www.idealo.de/preisvergleich/Shop/336477.html")).toMatch(/Kein idealo-Bewertungslink/);
   });
   it("Standard- und Google-Vorlagen enthalten keine Anreize oder Einflussnahme", () => {
-    for (const t of [...DEFAULT_TEMPLATES, ...GOOGLE_BUSINESS_TEMPLATES]) {
+    for (const t of [...DEFAULT_TEMPLATES, ...GOOGLE_BUSINESS_TEMPLATES, ...IDEALO_TEMPLATES]) {
       expect(templatePolicyProblems(`${t.subject}
 ${t.body}`)).toEqual([]);
       expect(findUnknownPlaceholders(t.body)).toEqual([]);

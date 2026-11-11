@@ -17,7 +17,7 @@ ReviewPilot synchronisiert Bestellungen aus Shopify und ermittelt den echten Zus
 | Judge.me (Bewertungen lesen) | ✅ – Einladungen **nicht** synchronisierbar (keine API) |
 | Google Kundenrezensionen | 📄 Einrichtungsanleitung (Google versendet selbst) |
 | Google-Unternehmensprofil | ✅ **Hauptkanal** (100 %), eine Anfrage pro Bestellung, Link hinterlegt (`g.page/r/CQuEv013N0m2EBM/review`) |
-| idealo | 🔗 Link-Fallback, standardmäßig 0 % – offizieller Link fehlt noch |
+| idealo | ✅ Shop-Bewertungsformular (`ShopRatingForm/336477`), nur für über idealo vermittelte Bestellungen – diese bekommen idealo **statt** Google, mit Bestellnummer in der Mail |
 | Tests | ✅ 80 automatisierte Tests (Fachlogik + Integration gegen echtes Postgres) |
 | Railway | ✅ Dockerfile + IaC, **noch nicht deployt** |
 

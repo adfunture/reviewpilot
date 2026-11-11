@@ -57,6 +57,21 @@ describe("Phase-4-Szenarien", () => {
     expect((await campaign(id))?.status).toBe("REVIEW_STATUS_UNKNOWN");
   });
 
+  it("idealo-Bestellung erhält die idealo-Anfrage mit Bestellnummer, andere die Google-Anfrage", async () => {
+    await db().reviewPlatform.update({ where: { shopId_key: { shopId, key: "IDEALO" } }, data: { active: true, reviewUrl: "https://www.idealo.de/preisvergleich/ShopRatingForm/336477.html" } });
+    const viaIdealo = await addOrder(shopId, { deliveredAt: "2026-12-01T14:00:00+01:00", utmSource: "idealo" });
+    const direct = await addOrder(shopId, { deliveredAt: "2026-12-01T14:00:00+01:00" });
+    await evaluateOrder(viaIdealo, new Date("2026-12-02T10:00:00Z"));
+    await evaluateOrder(direct, new Date("2026-12-02T10:00:00Z"));
+    expect(await sendDueInvitations(new Date("2026-12-05T08:01:00Z"))).toBe(2);
+    const idealoMail = mail.sent.find((m) => m.subject.includes("idealo"))!;
+    const order = await db().order.findUniqueOrThrow({ where: { id: viaIdealo } });
+    expect(idealoMail.text).toContain(`Bestellnummer: ${order.name}`);
+    expect(mail.sent.filter((m) => m.subject.includes("auf Google"))).toHaveLength(1);
+    const r = await (await buildApp({ serveWeb: false })).inject({ method: "GET", url: `/r/${(await invitations(viaIdealo))[0]!.trackingToken}` });
+    expect(r.headers.location).toBe("https://www.idealo.de/preisvergleich/ShopRatingForm/336477.html");
+  });
+
   it("manuelle Erinnerung: erst nach Versand, Mindestabstand 3 Tage, max. 3 Kontakte, danach wieder geschlossen", async () => {
     const id = await addOrder(shopId, { deliveredAt: "2026-12-01T14:00:00+01:00" });
     await evaluateOrder(id, new Date("2026-12-02T10:00:00Z"));

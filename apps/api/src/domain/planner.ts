@@ -69,10 +69,14 @@ export function stepDates(rule: ShippingRule, anchorAt: Date, s: RuleSettings, e
 
 /** Deterministische, kundenunabhängige gewichtete Plattformwahl (Hash der Bestell-ID). Kein Review-Gating. */
 export function selectPlatform(orderId: string, channel: SalesChannel, platforms: PlatformOption[]): PlatformOption | null {
-  const eligible = platforms
+  const usable = platforms
     .filter((p) => p.active && p.integrationType === "LINK" && !!p.reviewUrl)
     .filter((p) => p.onlyForChannels.length === 0 || p.onlyForChannels.includes(channel))
     .sort((a, b) => a.priority - b.priority || a.key.localeCompare(b.key));
+  // Kanal-spezifische Plattform hat Vorrang (z. B. idealo-Bestellung → idealo-Bewertung). Die Auswahl hängt nur
+  // von der Bestellherkunft ab, nie von der erwarteten Zufriedenheit.
+  const specific = usable.filter((p) => p.onlyForChannels.includes(channel));
+  const eligible = specific.length ? specific : usable;
   if (eligible.length === 0) return null;
   const total = eligible.reduce((sum, p) => sum + Math.max(0, p.targetShare), 0);
   if (total <= 0) return eligible[0]!;

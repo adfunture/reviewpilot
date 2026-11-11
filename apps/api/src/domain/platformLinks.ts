@@ -20,6 +20,11 @@ export function reviewUrlProblem(key: PlatformKey, raw: string): string | null {
     if (url.hostname === "search.google.com" && url.pathname === "/local/writereview" && /^[A-Za-z0-9_-]{10,}$/.test(url.searchParams.get("placeid") ?? "")) return null;
     return "Kein Google-Bewertungslink. Bitte im Google-Unternehmensprofil „Rezensionen erhalten“ öffnen und den Link kopieren (Form: https://g.page/r/…/review).";
   }
+  if (key === "IDEALO") {
+    // Shop-Bewertungsformular von idealo: https://www.idealo.de/preisvergleich/ShopRatingForm/<Shop-ID>.html
+    if (url.hostname === "www.idealo.de" && /^\/preisvergleich\/ShopRatingForm\/\d+\.html$/.test(url.pathname)) return null;
+    return "Kein idealo-Bewertungslink. Erwartet: https://www.idealo.de/preisvergleich/ShopRatingForm/<Shop-ID>.html";
+  }
   return null;
 }
 
