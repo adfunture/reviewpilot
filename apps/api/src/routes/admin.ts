@@ -464,7 +464,7 @@ export async function releaseChecklist(shop: string) {
   const judgeme = await db().shopIntegration.findUnique({ where: { shopId_provider: { shopId: shop, provider: "judgeme" } } });
   const items = [
     { label: "Rechtsgrundlage festgelegt", ok: rule.legalBasis !== "NONE", blocking: true },
-    { label: "SMTP-Versand konfiguriert (EMAIL_TRANSPORT=smtp)", ok: c.EMAIL_TRANSPORT === "smtp" && !!c.SMTP_HOST && !!c.EMAIL_FROM, blocking: true },
+    { label: "SMTP-Versand konfiguriert (EMAIL_TRANSPORT=smtp, Passwort gesetzt)", ok: c.EMAIL_TRANSPORT === "smtp" && !!c.SMTP_HOST && !!c.EMAIL_FROM && (!c.SMTP_USER || !!c.SMTP_PASSWORD), blocking: true },
     { label: "ALLOW_CUSTOMER_EMAILS=true auf dem Server", ok: c.ALLOW_CUSTOMER_EMAILS, blocking: true },
     { label: "Öffentliche HTTPS-URL für Links (PUBLIC_BASE_URL)", ok: c.PUBLIC_BASE_URL.startsWith("https://"), blocking: true },
     { label: "Mindestens eine aktive Plattform mit offiziellem Link", ok: platforms.some((p) => p.active && p.integrationType === "LINK" && !!p.reviewUrl), blocking: true },

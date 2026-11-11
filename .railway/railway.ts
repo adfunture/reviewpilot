@@ -22,7 +22,15 @@ export default defineRailway(() => {
     COOKIE_SECURE: "true",
     DATABASE_URL: db.env.DATABASE_URL,
     SHOPIFY_API_VERSION: "2026-10",
-    EMAIL_TRANSPORT: "log", // erst nach SMTP-Einrichtung auf "smtp" stellen
+    // E-Mail über Strato (support@adfunture.de). Kundenversand bleibt trotzdem gesperrt, bis ALLOW_CUSTOMER_EMAILS
+    // gesetzt und der Versand im Dashboard freigegeben ist – bis dahin gehen nur Test-E-Mails an Testempfänger.
+    EMAIL_TRANSPORT: "smtp",
+    SMTP_HOST: "smtp.strato.de",
+    SMTP_PORT: "465",
+    SMTP_SECURE: "true",
+    SMTP_USER: "support@adfunture.de",
+    EMAIL_FROM: "Adfunture <support@adfunture.de>",
+    EMAIL_REPLY_TO: "support@adfunture.de",
     // Werte im Railway-Dashboard setzen (Secrets):
     PUBLIC_BASE_URL: preserve(),
     ENCRYPTION_KEY: preserve(), // node dist/cli.js generate-key – zusätzlich offline sichern!
@@ -31,12 +39,7 @@ export default defineRailway(() => {
     SHOPIFY_CLIENT_ID: preserve(),
     SHOPIFY_CLIENT_SECRET: preserve(), // bei im Admin erstellter App: „API-Geheimschlüssel“ (shpss_…) für Webhook-Signaturen
     SHOPIFY_ACCESS_TOKEN: preserve(), // nur bei im Admin erstellter App: Admin-API-Zugriffstoken (shpat_…)
-    SMTP_HOST: preserve(),
-    SMTP_PORT: preserve(),
-    SMTP_USER: preserve(),
-    SMTP_PASSWORD: preserve(),
-    EMAIL_FROM: preserve(),
-    EMAIL_REPLY_TO: preserve(),
+    SMTP_PASSWORD: preserve(), // Strato-Postfachpasswort von support@adfunture.de – im Railway-Dashboard setzen
     BOUNCE_WEBHOOK_SECRET: preserve(),
     // Bleibt bis zur Produktivfreigabe ungesetzt (= false). Nur bewusst auf "true" setzen.
     ALLOW_CUSTOMER_EMAILS: preserve(),
