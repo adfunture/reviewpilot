@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { cancelCampaign, evaluateOrder, manualReminderCheck, markReviewReceived, pauseCampaign, resumeCampaign, scheduleManualReminder } from "../campaigns/engine.js";
 import { clickUrl, legalNotice, sendingBlockedReason, unsubscribeUrl } from "../campaigns/sender.js";
-import { config } from "../config.js";
+import { config, shopifyConfigured } from "../config.js";
 import { findUnknownPlaceholders, renderEmail } from "../email/render.js";
 import { reviewUrlProblem, templatePolicyProblems } from "../domain/platformLinks.js";
 import { emailTransport } from "../email/transport.js";
@@ -372,7 +372,7 @@ ${body.bodyText}`);
     const rows = await db().shopIntegration.findMany({ where: { shopId: shopId(req) } });
     const c = config();
     return {
-      shopify: { configured: !!(c.SHOPIFY_SHOP_DOMAIN && c.SHOPIFY_CLIENT_ID && c.SHOPIFY_CLIENT_SECRET), domain: c.SHOPIFY_SHOP_DOMAIN ?? null, apiVersion: c.SHOPIFY_API_VERSION },
+      shopify: { configured: shopifyConfigured(), mode: c.SHOPIFY_ACCESS_TOKEN ? "Admin-API-Token" : "Client Credentials", domain: c.SHOPIFY_SHOP_DOMAIN ?? null, apiVersion: c.SHOPIFY_API_VERSION, webhookSecret: !!c.SHOPIFY_CLIENT_SECRET },
       email: { transport: c.EMAIL_TRANSPORT, from: c.EMAIL_FROM ?? null, allowCustomerEmails: c.ALLOW_CUSTOMER_EMAILS },
       judgeme: { ...(rows.find((r) => r.provider === "judgeme") ?? { status: "NOT_CONFIGURED", statusDetail: null, lastCheckedAt: null }), encryptedConfig: undefined, capabilities: JUDGEME_CAPABILITIES },
     };

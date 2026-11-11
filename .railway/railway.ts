@@ -29,7 +29,8 @@ export default defineRailway(() => {
     SESSION_SECRET: preserve(),
     SHOPIFY_SHOP_DOMAIN: preserve(),
     SHOPIFY_CLIENT_ID: preserve(),
-    SHOPIFY_CLIENT_SECRET: preserve(),
+    SHOPIFY_CLIENT_SECRET: preserve(), // bei im Admin erstellter App: „API-Geheimschlüssel“ (shpss_…) für Webhook-Signaturen
+    SHOPIFY_ACCESS_TOKEN: preserve(), // nur bei im Admin erstellter App: Admin-API-Zugriffstoken (shpat_…)
     SMTP_HOST: preserve(),
     SMTP_PORT: preserve(),
     SMTP_USER: preserve(),

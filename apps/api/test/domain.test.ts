@@ -9,6 +9,7 @@ import { DEFAULT_TEMPLATES, findUnknownPlaceholders, GOOGLE_BUSINESS_TEMPLATES, 
 import { reviewUrlProblem, templatePolicyProblems } from "../src/domain/platformLinks.js";
 import { normalizeOrder } from "../src/shopify/mapper.js";
 import { orderGidFromWebhook, verifyShopifyHmac } from "../src/shopify/webhooks.js";
+import { ShopifyClient } from "../src/shopify/client.js";
 
 const TZ = "Europe/Berlin";
 const S: RuleSettings = {
@@ -271,6 +272,26 @@ ${t.body}`)).toEqual([]);
   it("erkennt unzulässige Formulierungen", () => {
     expect(templatePolicyProblems("Für eine 5-Sterne-Bewertung erhältst du einen Gutschein")).toHaveLength(2);
     expect(templatePolicyProblems("Mach mit beim Gewinnspiel")).toHaveLength(1);
+  });
+});
+
+describe("Shopify-Anmeldung", () => {
+  it("festes Admin-API-Token: kein Token-Abruf, Token im Header", async () => {
+    const calls: { url: string; token?: string }[] = [];
+    const fake = (async (url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), token: (init?.headers as Record<string, string> | undefined)?.["X-Shopify-Access-Token"] });
+      return Response.json({ data: { shop: { name: "Adfunture" } } });
+    }) as unknown as typeof fetch;
+    const c = new ShopifyClient("x.myshopify.com", "", "", "2026-10", fake, "shpat_test");
+    await c.graphql("query { shop { name } }");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toContain("/admin/api/2026-10/graphql.json");
+    expect(calls[0]!.token).toBe("shpat_test");
+  });
+  it("lesbare Fehlermeldung bei app_not_installed", async () => {
+    const fake = (async () => new Response("<html><title>400 - Oauth error app_not_installed</title><p>Oauth error app_not_installed: App is not installed</p></html>", { status: 400 })) as unknown as typeof fetch;
+    const c = new ShopifyClient("x.myshopify.com", "id", "secret", "2026-10", fake);
+    await expect(c.graphql("query { shop { name } }")).rejects.toThrow(/app_not_installed.*SHOPIFY_ACCESS_TOKEN/);
   });
 });
 

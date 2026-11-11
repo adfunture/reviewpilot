@@ -15,24 +15,35 @@ export class ShopifyClient {
     private readonly clientSecret: string,
     private readonly apiVersion: string,
     private readonly fetchImpl: typeof fetch = fetch,
+    private readonly staticToken?: string,
   ) {}
 
   static fromEnv(): ShopifyClient {
     const c = config();
-    if (!c.SHOPIFY_SHOP_DOMAIN || !c.SHOPIFY_CLIENT_ID || !c.SHOPIFY_CLIENT_SECRET) {
-      throw new Error("Shopify nicht konfiguriert (SHOPIFY_SHOP_DOMAIN, SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET)");
+    const staticToken = c.SHOPIFY_ACCESS_TOKEN?.trim();
+    if (!c.SHOPIFY_SHOP_DOMAIN || (!staticToken && (!c.SHOPIFY_CLIENT_ID || !c.SHOPIFY_CLIENT_SECRET))) {
+      throw new Error("Shopify nicht konfiguriert (SHOPIFY_SHOP_DOMAIN und entweder SHOPIFY_ACCESS_TOKEN oder SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET)");
     }
-    return new ShopifyClient(c.SHOPIFY_SHOP_DOMAIN, c.SHOPIFY_CLIENT_ID, c.SHOPIFY_CLIENT_SECRET, c.SHOPIFY_API_VERSION);
+    return new ShopifyClient(c.SHOPIFY_SHOP_DOMAIN, c.SHOPIFY_CLIENT_ID ?? "", c.SHOPIFY_CLIENT_SECRET ?? "", c.SHOPIFY_API_VERSION, fetch, staticToken || undefined);
   }
 
   private async accessToken(): Promise<string> {
+    // Im Admin erstellte Custom App: festes Token, kein Token-Abruf nötig
+    if (this.staticToken) return this.staticToken;
     if (this.token && this.token.expiresAt - 5 * 60_000 > Date.now()) return this.token.value;
     const res = await this.fetchImpl(`https://${this.shopDomain}/admin/oauth/access_token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ client_id: this.clientId, client_secret: this.clientSecret, grant_type: "client_credentials" }),
     });
-    if (!res.ok) throw new Error(`Shopify-Token-Anfrage fehlgeschlagen: HTTP ${res.status} ${await res.text()}`);
+    if (!res.ok) {
+      // Shopify antwortet mit einer HTML-Fehlerseite – nur den lesbaren Grund protokollieren
+      const reason = /Oauth error ([a-z_]+)(?::\s*([^<]+))?/i.exec(await res.text());
+      const hint = reason?.[1] === "app_not_installed"
+        ? " – App ist im Shop nicht installiert oder ist eine im Admin erstellte App (dann SHOPIFY_ACCESS_TOKEN setzen)"
+        : "";
+      throw new Error(`Shopify-Token-Anfrage fehlgeschlagen: HTTP ${res.status} ${reason ? `${reason[1]}${reason[2] ? `: ${reason[2].trim()}` : ""}` : ""}${hint}`);
+    }
     const json = (await res.json()) as { access_token: string; expires_in: number; scope?: string };
     this.token = { value: json.access_token, expiresAt: Date.now() + json.expires_in * 1000 };
     return json.access_token;

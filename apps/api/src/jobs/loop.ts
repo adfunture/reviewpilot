@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { config } from "../config.js";
+import { config, shopifyConfigured as isShopifyConfigured } from "../config.js";
 import { logger } from "../lib/logger.js";
 import { handlers, scheduleRecurring } from "./handlers.js";
 import { releaseStale, runOnce } from "./queue.js";
@@ -10,7 +10,7 @@ let stopping = false;
 export async function startWorker(): Promise<void> {
   const c = config();
   const id = `worker-${randomUUID().slice(0, 8)}`;
-  const shopifyConfigured = !!(c.SHOPIFY_SHOP_DOMAIN && c.SHOPIFY_CLIENT_ID && c.SHOPIFY_CLIENT_SECRET);
+  const shopifyConfigured = isShopifyConfigured();
   logger.info({ id, shopifyConfigured, emailTransport: c.EMAIL_TRANSPORT, allowCustomerEmails: c.ALLOW_CUSTOMER_EMAILS }, "Worker gestartet");
   await releaseStale(); // nach Neustart: abgebrochene Jobs (älter als 15 min) freigeben
   while (!stopping) {

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { config } from "./config.js";
+import { config, shopifyConfigured } from "./config.js";
 import { hashPassword } from "./lib/crypto.js";
 import { audit, db, disconnectDb } from "./lib/db.js";
 import { ensureShop } from "./services/bootstrap.js";
@@ -28,7 +28,7 @@ async function main(): Promise<void> {
       const domain = c.SHOPIFY_SHOP_DOMAIN;
       if (!domain) throw new Error("SHOPIFY_SHOP_DOMAIN fehlt");
       let name = args[0] ?? "Adfunture";
-      if (c.SHOPIFY_CLIENT_ID && c.SHOPIFY_CLIENT_SECRET) {
+      if (shopifyConfigured()) {
         try {
           const info = await ShopifyClient.fromEnv().graphql<{ shop: { name: string } }>(SHOP_INFO);
           name = info.shop.name;

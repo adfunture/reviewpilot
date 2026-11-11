@@ -21,7 +21,10 @@ const schema = z.object({
   // Shopify (Dev-Dashboard-App, Client Credentials Grant für den eigenen Shop)
   SHOPIFY_SHOP_DOMAIN: z.string().optional(), // adfunture.myshopify.com
   SHOPIFY_CLIENT_ID: z.string().optional(),
-  SHOPIFY_CLIENT_SECRET: z.string().optional(),
+  SHOPIFY_CLIENT_SECRET: z.string().optional(), // auch: „API-Geheimschlüssel“ einer im Admin erstellten App (Webhook-Signatur)
+  // Alternative zum Client Credentials Grant: festes Admin-API-Zugriffstoken (shpat_…) einer im Shopify-Admin
+  // erstellten Custom App. Ist es gesetzt, wird kein Token angefragt.
+  SHOPIFY_ACCESS_TOKEN: z.string().optional(),
   SHOPIFY_API_VERSION: z.string().default("2026-10"),
 
   // E-Mail
@@ -71,4 +74,10 @@ export function sessionSecret(): string {
   if (c.SESSION_SECRET) return c.SESSION_SECRET;
   if (c.NODE_ENV === "production") throw new Error("SESSION_SECRET fehlt");
   return "dev-only-session-secret-not-for-production-use!!";
+}
+
+/** Shopify ist nutzbar, wenn Shop-Domain und entweder festes Token oder Client ID + Secret vorhanden sind */
+export function shopifyConfigured(): boolean {
+  const c = config();
+  return !!c.SHOPIFY_SHOP_DOMAIN && (!!c.SHOPIFY_ACCESS_TOKEN?.trim() || (!!c.SHOPIFY_CLIENT_ID && !!c.SHOPIFY_CLIENT_SECRET));
 }
