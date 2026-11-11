@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.next/
+out/
+.env
+.env.*
+!.env.example
+apps/api/public/
+*.log
+coverage/
+.localdb/
+.localdb-admin.txt

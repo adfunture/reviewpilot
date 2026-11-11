@@ -1,0 +1,22 @@
+{
+  "name": "reviewpilot",
+  "private": true,
+  "version": "0.1.0",
+  "description": "ReviewPilot – Multi-Channel Review Manager für Shopify",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "install:all": "npm ci --prefix apps/api && npm ci --prefix apps/web && npm install --prefix tools/testdb",
+    "build": "npm run build --prefix apps/web && npm run build --prefix apps/api",
+    "test": "npm test --prefix apps/api",
+    "testdb": "npm start --prefix tools/testdb",
+    "dev:api": "npm run dev --prefix apps/api",
+    "dev:web": "npm run dev --prefix apps/web",
+    "railway:plan": "railway config plan",
+    "railway:apply": "railway config apply"
+  },
+  "devDependencies": {
+    "railway": "3.16.0"
+  }
+}

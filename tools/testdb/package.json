@@ -1,0 +1,12 @@
+{
+  "name": "reviewpilot-testdb",
+  "private": true,
+  "description": "Lokales Postgres (PGlite) für Tests ohne Docker",
+  "scripts": {
+    "start": "pglite-server --port=54330 --db=memory:// --max-connections=4"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.3.16",
+    "@electric-sql/pglite-socket": "0.0.22"
+  }
+}

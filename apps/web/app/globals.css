@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --rp-bg: #f8fafc;
+  --rp-fg: #0f172a;
+  --rp-card: #ffffff;
+  --rp-border: #e2e8f0;
+  --rp-muted: #64748b;
+  --rp-hover: #f1f5f9;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --rp-bg: #0b1120;
+    --rp-fg: #e2e8f0;
+    --rp-card: #111827;
+    --rp-border: #1f2937;
+    --rp-muted: #94a3b8;
+    --rp-hover: #1e293b;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--rp-bg);
+  --color-fg: var(--rp-fg);
+  --color-card: var(--rp-card);
+  --color-border: var(--rp-border);
+  --color-muted: var(--rp-muted);
+  --color-hover: var(--rp-hover);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+body {
+  background: var(--rp-bg);
+  color: var(--rp-fg);
+}

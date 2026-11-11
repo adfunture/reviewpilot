@@ -1,0 +1,11 @@
+**/node_modules
+**/.next
+**/out
+**/dist
+apps/api/public
+apps/api/.env
+.localdb
+.localdb-admin.txt
+.git
+tools
+docs
