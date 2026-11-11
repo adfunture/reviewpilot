@@ -10,3 +10,4 @@ apps/api/public/
 coverage/
 .localdb/
 .localdb-admin.txt
+.railway-secrets.local.txt
