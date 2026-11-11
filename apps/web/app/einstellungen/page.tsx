@@ -60,6 +60,8 @@ export default function SettingsPage() {
   const [ack, setAck] = useState(false);
   const [uwgAck, setUwgAck] = useState(false);
   const [jm, setJm] = useState({ shopDomain: "", apiToken: "" });
+  const [hooks, setHooks] = useState<{ expectedUri: string; topics: { topic: string; active: boolean }[] } | null>(null);
+  const [regResult, setRegResult] = useState<{ topic: string; status: string }[] | null>(null);
   const [newMap, setNewMap] = useState({ field: "utm_source", pattern: "", channel: "IDEALO", priority: 15 });
 
   async function load() {
@@ -207,8 +209,23 @@ export default function SettingsPage() {
           {integ.shopify.configured && (
             <div className="mt-4 flex flex-wrap gap-2">
               <Button variant="secondary" onClick={() => run(() => api("/api/integrations/shopify/test", { method: "POST" }), "Shopify-Verbindung OK")}>Shopify testen</Button>
-              <Button variant="secondary" onClick={() => run(() => api("/api/integrations/shopify/register-webhooks", { method: "POST" }), "Webhooks geprüft/angelegt")}>Webhooks registrieren</Button>
+              <Button variant="secondary" onClick={() => run(async () => { setRegResult(await api("/api/integrations/shopify/register-webhooks", { method: "POST" })); setHooks(await api("/api/integrations/shopify/webhooks")); }, "Webhooks geprüft/angelegt")}>Webhooks registrieren</Button>
+              <Button variant="ghost" onClick={() => run(async () => setHooks(await api("/api/integrations/shopify/webhooks")), "Webhook-Status geladen")}>Webhook-Status anzeigen</Button>
             </div>
+          )}
+          {regResult && regResult.some((r) => r.status.startsWith("Fehler")) && (
+            <div className="mt-3"><Notice tone="red" title="Fehler bei der Registrierung">{regResult.filter((r) => r.status.startsWith("Fehler")).map((r) => `${r.topic}: ${r.status}`).join(" · ")}</Notice></div>
+          )}
+          {hooks && (
+            <ul className="mt-3 space-y-1 text-sm">
+              {hooks.topics.map((t) => (
+                <li key={t.topic} className="flex items-center gap-2">
+                  <span className={t.active ? "text-emerald-600" : "text-red-600"}>{t.active ? "✔" : "✘"}</span>
+                  {t.topic}
+                </li>
+              ))}
+              <li className="text-xs text-muted">Ziel: {hooks.expectedUri}</li>
+            </ul>
           )}
           <div className="mt-4 grid gap-2 border-t border-border pt-4 sm:grid-cols-2">
             <label><Label>Judge.me Shop-Domain</Label><Input placeholder="xyz.myshopify.com" value={jm.shopDomain} onChange={(e) => setJm({ ...jm, shopDomain: e.target.value })} /></label>

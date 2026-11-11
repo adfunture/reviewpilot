@@ -390,6 +390,18 @@ ${body.bodyText}`);
     const data = await client.graphql<{ shop: { name: string; myshopifyDomain: string; ianaTimezone: string } }>(SHOP_INFO);
     return { ok: true, shop: data.shop };
   });
+  // Welche Webhooks sind bei Shopify für diese App tatsächlich aktiv? (zeigt fehlende Themen und falsche Ziel-URLs)
+  app.get("/api/integrations/shopify/webhooks", async () => {
+    const client = ShopifyClient.fromEnv();
+    const uri = `${config().PUBLIC_BASE_URL}/webhooks/shopify`;
+    const existing = await client.graphql<{ webhookSubscriptions: { nodes: { topic: string; uri: string }[] } }>(WEBHOOK_SUBSCRIPTIONS);
+    return {
+      expectedUri: uri,
+      topics: WEBHOOK_TOPICS.map((topic) => ({ topic, active: existing.webhookSubscriptions.nodes.some((n) => n.topic === topic && n.uri === uri) })),
+      other: existing.webhookSubscriptions.nodes.filter((n) => n.uri !== uri).map((n) => ({ topic: n.topic, uri: n.uri })),
+    };
+  });
+
   app.post("/api/integrations/shopify/register-webhooks", write, async (req) => {
     const client = ShopifyClient.fromEnv();
     const uri = `${config().PUBLIC_BASE_URL}/webhooks/shopify`;
