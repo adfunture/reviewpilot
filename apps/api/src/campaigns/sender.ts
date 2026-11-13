@@ -59,12 +59,29 @@ async function setInvitation(id: string, data: Prisma.ReviewInvitationUpdateInpu
   await db().reviewInvitation.update({ where: { id }, data });
 }
 
-/** Verarbeitet fällige Einladungen. Rückgabe: Anzahl tatsächlich versendeter E-Mails. */
-export async function sendDueInvitations(now = new Date(), limit = 25): Promise<number> {
-  if (!config().ALLOW_CUSTOMER_EMAILS) return 0;
-  const ids = await claimDue(limit, now);
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Zeitpunkt der zuletzt versendeten Kunden-E-Mail (für den Mindestabstand zwischen zwei Durchgängen) */
+async function lastSentAt(): Promise<Date | null> {
+  const last = await db().reviewInvitation.findFirst({ where: { status: "SENT", sentAt: { not: null } }, orderBy: { sentAt: "desc" }, select: { sentAt: true } });
+  return last?.sentAt ?? null;
+}
+
+/**
+ * Verarbeitet fällige Einladungen – gedrosselt: höchstens SEND_BATCH_SIZE (Standard 5) pro Durchgang,
+ * dazwischen SEND_STAGGER_SECONDS Abstand, und ein neuer Durchgang frühestens SEND_BATCH_INTERVAL_MINUTES
+ * nach der letzten versendeten Mail. Rückgabe: Anzahl tatsächlich versendeter E-Mails.
+ */
+export async function sendDueInvitations(now = new Date(), limit = config().SEND_BATCH_SIZE): Promise<number> {
+  const c = config();
+  if (!c.ALLOW_CUSTOMER_EMAILS) return 0;
+  const last = await lastSentAt();
+  if (last && now.getTime() - last.getTime() < c.SEND_BATCH_INTERVAL_MINUTES * 60_000) return 0;
+  const ids = await claimDue(Math.min(limit, c.SEND_BATCH_SIZE), now);
   let sentCount = 0;
   for (const id of ids) {
+    // Zeitlich versetzt: erst warten, wenn schon eine Mail dieses Durchgangs raus ist
+    if (sentCount > 0 && c.SEND_STAGGER_SECONDS > 0) await sleep(c.SEND_STAGGER_SECONDS * 1000);
     try {
       if (await processInvitation(id, now)) sentCount++;
     } catch (err) {

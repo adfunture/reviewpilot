@@ -22,6 +22,7 @@ export default defineConfig({
       SHOPIFY_CLIENT_SECRET: "test-secret",
       EMAIL_TRANSPORT: "log",
       ALLOW_CUSTOMER_EMAILS: "true",
+      SEND_STAGGER_SECONDS: "0",
     },
   },
 });

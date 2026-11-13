@@ -57,6 +57,17 @@ describe("Phase-4-Szenarien", () => {
     expect((await campaign(id))?.status).toBe("REVIEW_STATUS_UNKNOWN");
   });
 
+  it("Versanddrosselung: max. 5 pro Durchgang, nächster Durchgang erst nach 10 Minuten", async () => {
+    for (let i = 0; i < 7; i++) {
+      const id = await addOrder(shopId, { deliveredAt: "2026-12-01T14:00:00+01:00" });
+      await evaluateOrder(id, new Date("2026-12-02T10:00:00Z"));
+    }
+    expect(await sendDueInvitations(new Date("2026-12-05T08:01:00Z"))).toBe(5);
+    expect(await sendDueInvitations(new Date("2026-12-05T08:06:00Z"))).toBe(0); // Pause läuft noch
+    expect(await sendDueInvitations(new Date("2026-12-05T08:11:00Z"))).toBe(2);
+    expect(mail.sent).toHaveLength(7);
+  });
+
   it("idealo-Bestellung erhält die idealo-Anfrage mit Bestellnummer, andere die Google-Anfrage", async () => {
     await db().reviewPlatform.update({ where: { shopId_key: { shopId, key: "IDEALO" } }, data: { active: true, reviewUrl: "https://www.idealo.de/preisvergleich/ShopRatingForm/336477.html" } });
     const viaIdealo = await addOrder(shopId, { deliveredAt: "2026-12-01T14:00:00+01:00", utmSource: "idealo" });

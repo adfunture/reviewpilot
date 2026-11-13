@@ -38,6 +38,11 @@ const schema = z.object({
   EMAIL_REPLY_TO: z.string().optional(),
   // Zweite, harte Sicherung neben der Freigabe im Dashboard: ohne "true" verlässt keine Kunden-E-Mail das System
   ALLOW_CUSTOMER_EMAILS: bool,
+  // Versanddrosselung: max. SEND_BATCH_SIZE Mails pro Durchgang, SEND_STAGGER_SECONDS Abstand zwischen den Mails
+  // eines Durchgangs, mind. SEND_BATCH_INTERVAL_MINUTES zwischen zwei Durchgängen (schont Absender-Reputation)
+  SEND_BATCH_SIZE: z.coerce.number().int().min(1).default(5),
+  SEND_STAGGER_SECONDS: z.coerce.number().int().min(0).default(30),
+  SEND_BATCH_INTERVAL_MINUTES: z.coerce.number().int().min(0).default(10),
 
   // Worker
   RUN_WORKER_IN_WEB: bool, // spart einen Railway-Service (kleine Shops)
