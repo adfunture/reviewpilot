@@ -1,7 +1,7 @@
 import { createHmac } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
-import { evaluateOrder, manualReminderCheck, markReviewReceived, scheduleManualReminder } from "../src/campaigns/engine.js";
+import { dueReminders, evaluateOrder, manualReminderCheck, markReviewReceived, scheduleManualReminder } from "../src/campaigns/engine.js";
 import { recoverStuckSending, sendDueInvitations } from "../src/campaigns/sender.js";
 import { resetConfig } from "../src/config.js";
 import { formatDateDe } from "../src/domain/time.js";
@@ -112,6 +112,39 @@ describe("Phase-4-Szenarien", () => {
     await sendDueInvitations(new Date(r3.scheduledAt.getTime() + 60_000));
     expect(await manualReminderCheck(c.id, new Date("2026-12-20T10:00:00Z"))).toMatchObject({ ok: false, reason: expect.stringMatching(/Maximal 3/) });
     expect(mail.sent).toHaveLength(3);
+  });
+
+  it("überfällige Einladung wird nachts nicht versendet, sondern auf den nächsten Versandbeginn verschoben", async () => {
+    const id = await addOrder(shopId, { deliveredAt: "2026-12-01T14:00:00+01:00" });
+    await evaluateOrder(id, new Date("2026-12-02T10:00:00Z"));
+    // 22:30 Uhr Berlin (z. B. Freigabe am Abend) → kein Versand
+    expect(await sendDueInvitations(new Date("2026-12-05T21:30:00Z"))).toBe(0);
+    const inv = (await invitations(id))[0]!;
+    expect(inv.status).toBe("SCHEDULED");
+    expect(inv.scheduledAt.toISOString()).toBe("2026-12-06T08:00:00.000Z"); // 09:00 Berlin
+    expect(await sendDueInvitations(new Date("2026-12-06T08:01:00Z"))).toBe(1);
+  });
+
+  it("Liste „Erinnerung fällig“: erst nach Mindestabstand, nicht bei bestätigter Bewertung, Sammel-Einplanung", async () => {
+    const a = await addOrder(shopId, { deliveredAt: "2026-12-01T14:00:00+01:00" });
+    const b = await addOrder(shopId, { deliveredAt: "2026-12-01T14:00:00+01:00" });
+    await evaluateOrder(a, new Date("2026-12-02T10:00:00Z"));
+    await evaluateOrder(b, new Date("2026-12-02T10:00:00Z"));
+    await sendDueInvitations(new Date("2026-12-05T08:01:00Z"));
+    const ca = (await campaign(a))!;
+    const cb = (await campaign(b))!;
+    expect((await dueReminders(shopId, new Date("2026-12-06T10:00:00Z"))).size).toBe(0); // Mindestabstand 3 Tage
+    const due = await dueReminders(shopId, new Date("2026-12-08T10:00:00Z"));
+    expect([...due.keys()].sort()).toEqual([ca.id, cb.id].sort());
+    expect(due.get(ca.id)?.step).toBe(2);
+
+    await markReviewReceived(cb.id, "manuell bestätigt");
+    expect([...(await dueReminders(shopId, new Date("2026-12-08T10:00:00Z"))).keys()]).toEqual([ca.id]);
+
+    await scheduleManualReminder(ca.id, "test", new Date("2026-12-08T10:00:00Z"));
+    expect((await dueReminders(shopId, new Date("2026-12-08T10:00:00Z"))).size).toBe(0); // bereits eingeplant
+    // nach 30 Tagen ohne Kontakt wird keine Erinnerung mehr angeboten
+    expect((await dueReminders(shopId, new Date("2027-02-01T10:00:00Z"))).size).toBe(0);
   });
 
   it("manuelle Erinnerung respektiert Abmeldung, Storno und bestätigte Bewertung", async () => {
@@ -512,6 +545,11 @@ describe("HTTP-Schnittstellen", () => {
     const ok = await app.inject({ method: "POST", url: "/api/test-email", headers: { cookie }, payload: { to: "test@adfunture.test", step: 2 } });
     expect(ok.statusCode).toBe(200);
     expect(mail.sent.at(-1)!.subject).toBe("[TEST] Deine Meinung zu Adfunture ist uns wichtig");
+    // Test aus einem Plattform-Vorlagensatz nutzt dessen Vorlage und Bewertungslink
+    await db().reviewPlatform.update({ where: { shopId_key: { shopId, key: "IDEALO" } }, data: { active: true, reviewUrl: "https://www.idealo.de/preisvergleich/ShopRatingForm/336477.html" } });
+    expect((await app.inject({ method: "POST", url: "/api/test-email", headers: { cookie }, payload: { to: "test@adfunture.test", step: 1, scope: "IDEALO" } })).statusCode).toBe(200);
+    expect(mail.sent.at(-1)!.subject).toContain("idealo");
+    expect(mail.sent.at(-1)!.text).toContain("idealo.de/preisvergleich/ShopRatingForm/336477.html");
 
     // Freigabe scheitert, weil im Test kein SMTP konfiguriert ist (EMAIL_TRANSPORT=log)
     const rel = await app.inject({ method: "POST", url: "/api/settings/release", headers: { cookie }, payload: { confirmation: "VERSAND FREIGEBEN", acknowledgeJudgemeParallel: true } });

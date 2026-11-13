@@ -49,7 +49,7 @@ function Editor({ t, onSaved }: { t: Template; onSaved: () => void }) {
         <Button onClick={() => run(async () => { await api("/api/templates", { method: "PUT", body: { scope: t.scope, step: t.step, subject, bodyText: body } }); onSaved(); }, "Gespeichert")}>Speichern</Button>
         <Button variant="secondary" onClick={() => run(async () => setPreview(await api("/api/templates/preview", { method: "POST", body: { subject, bodyText: body } })), "")}>Vorschau</Button>
         <Input placeholder="Testempfänger" value={testTo} onChange={(e) => setTestTo(e.target.value)} className="w-56" />
-        <Button variant="secondary" disabled={!testTo} onClick={() => run(() => api("/api/test-email", { method: "POST", body: { to: testTo, step: t.step } }), "Test-E-Mail verschickt (gespeicherte Version)")}>
+        <Button variant="secondary" disabled={!testTo} onClick={() => run(() => api("/api/test-email", { method: "POST", body: { to: testTo, step: t.step, scope: t.scope } }), "Test-E-Mail verschickt (gespeicherte Version)")}>
           Test-E-Mail
         </Button>
         {msg && <span className="text-sm text-emerald-600">{msg}</span>}

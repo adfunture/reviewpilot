@@ -237,3 +237,30 @@ export async function markReviewReceived(campaignId: string, reason: string): Pr
     await tx.reviewCampaign.update({ where: { id: campaignId }, data: { status: "REVIEW_RECEIVED", reviewStatus: "REVIEWED", statusReason: reason, closedAt: new Date() } });
   });
 }
+
+/** Erinnerungen werden nur angeboten, solange die letzte E-Mail höchstens so lange zurückliegt */
+export const REMINDER_OFFER_MAX_DAYS = 30;
+
+/**
+ * Kampagnen, für die jetzt eine manuelle Erinnerung möglich ist (Mindestabstand erreicht, max. Kontakte nicht
+ * überschritten, keine Bewertung, kein Widerspruch …). Grundlage ist dieselbe Prüfung wie beim Einzelversand.
+ */
+export async function dueReminders(shopId: string, now = new Date()): Promise<Map<string, { step: number; lastSentAt: Date }>> {
+  const candidates = await db().reviewCampaign.findMany({
+    where: {
+      shopId,
+      status: { in: ["ACTIVE", "REVIEW_STATUS_UNKNOWN", "COMPLETED"] },
+      reviewStatus: { not: "REVIEWED" },
+      invitations: { some: { status: "SENT", sentAt: { gte: new Date(now.getTime() - REMINDER_OFFER_MAX_DAYS * 86400_000) } }, none: { status: { in: ["SCHEDULED", "SENDING"] } } },
+    },
+    select: { id: true, invitations: { where: { status: "SENT" }, select: { sentAt: true } } },
+  });
+  const due = new Map<string, { step: number; lastSentAt: Date }>();
+  for (const c of candidates) {
+    const check = await manualReminderCheck(c.id, now);
+    if (!check.ok || check.earliest.getTime() > now.getTime()) continue;
+    const lastSentAt = new Date(Math.max(...c.invitations.map((i) => i.sentAt!.getTime())));
+    due.set(c.id, { step: check.step, lastSentAt });
+  }
+  return due;
+}

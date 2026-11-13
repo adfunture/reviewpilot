@@ -21,7 +21,11 @@ interface Row {
   reviewStatus: string | null;
   campaignStatus: string | null;
   campaignReason: string | null;
+  campaignId: string | null;
+  reminderDue: { step: number; lastSentAt: string } | null;
 }
+
+type SortKey = "name" | "customer" | "orderCreatedAt" | "carrier" | "hasTracking" | "deliveryStatus" | "shippingRule" | "platform" | "invite1" | "invite2" | "invite3" | "reviewStatus" | "campaignStatus";
 
 function Invite({ i }: { i: Row["invitations"][number] }) {
   if (!i) return <span className="text-muted">–</span>;
@@ -39,16 +43,60 @@ export default function OrdersPage() {
   const [search, setSearch] = useState("");
   const [campaignStatus, setCampaignStatus] = useState("");
   const [deliveryStatus, setDeliveryStatus] = useState("");
+  const [invitationStatus, setInvitationStatus] = useState("");
+  const [reminderDue, setReminderDue] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  // Link vom Dashboard: /bestellungen?erinnerung=1
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("erinnerung") === "1") setReminderDue(true);
+  }, []);
+
+  async function scheduleReminders(campaignIds: string[], confirmText: string) {
+    if (!campaignIds.length || !window.confirm(confirmText)) return;
+    setBusy(true);
+    try {
+      const res = await api<{ scheduled: number; failed: { campaignId: string; reason: string }[] }>("/api/campaigns/manual-reminders", { method: "POST", body: { campaignIds, confirmNoReview: true } });
+      const failed = res.failed.length ? `\n\nNicht eingeplant (${res.failed.length}):\n${[...new Set(res.failed.map((f) => f.reason))].join("\n")}` : "";
+      alert(`${res.scheduled} Erinnerung(en) eingeplant. Der Versand erfolgt im Versandfenster, höchstens 5 Mails auf einmal.${failed}`);
+      await load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  const [sort, setSort] = useState<SortKey>("orderCreatedAt");
+  const [dir, setDir] = useState<"asc" | "desc">("desc");
+
+  function toggleSort(key: SortKey) {
+    setPage(1);
+    if (key === sort) setDir(dir === "asc" ? "desc" : "asc");
+    else {
+      setSort(key);
+      // Datumsspalten zuerst neueste, Textspalten zuerst A–Z
+      setDir(key === "orderCreatedAt" || key.startsWith("invite") ? "desc" : "asc");
+    }
+  }
+
+  const header = (label: string, key: SortKey) => (
+    <button type="button" onClick={() => toggleSort(key)} className="inline-flex items-center gap-1 whitespace-nowrap hover:text-fg" title="Sortieren">
+      {label}
+      <span className={sort === key ? "text-fg" : "opacity-30"}>{sort === key ? (dir === "asc" ? "▲" : "▼") : "↕"}</span>
+    </button>
+  );
 
   const load = useCallback(async () => {
-    const q = new URLSearchParams({ page: String(page) });
+    const q = new URLSearchParams({ page: String(page), sort, dir });
     if (search) q.set("search", search);
     if (campaignStatus) q.set("campaignStatus", campaignStatus);
     if (deliveryStatus) q.set("deliveryStatus", deliveryStatus);
+    if (invitationStatus) q.set("invitationStatus", invitationStatus);
+    if (reminderDue) q.set("reminderDue", "true");
     const d = await api<{ rows: Row[]; total: number }>(`/api/orders?${q}`);
     setRows(d.rows);
     setTotal(d.total);
-  }, [page, search, campaignStatus, deliveryStatus]);
+  }, [page, search, campaignStatus, deliveryStatus, invitationStatus, reminderDue, sort, dir]);
 
   useEffect(() => {
     void load();
@@ -85,8 +133,61 @@ export default function OrdersPage() {
               <option key={k} value={k}>{v}</option>
             ))}
           </Select>
+          <Select value={invitationStatus} onChange={(e) => { setPage(1); setInvitationStatus(e.target.value); }} aria-label="Einladungsstatus">
+            <option value="">Alle Einladungen</option>
+            {["SENT", "SCHEDULED", "FAILED", "SKIPPED", "CANCELLED"].map((k) => (
+              <option key={k} value={k}>Einladung {INVITATION_STATUS[k]}</option>
+            ))}
+          </Select>
+          <Button variant={reminderDue ? "primary" : "secondary"} onClick={() => { setPage(1); setReminderDue(!reminderDue); }}>
+            {reminderDue ? "✓ " : ""}Erinnerung fällig
+          </Button>
+          {(search || campaignStatus || deliveryStatus || invitationStatus || reminderDue) && (
+            <Button variant="secondary" onClick={() => { setPage(1); setSearch(""); setCampaignStatus(""); setDeliveryStatus(""); setInvitationStatus(""); setReminderDue(false); }}>Filter zurücksetzen</Button>
+          )}
         </div>
-        <Table head={["Bestellung", "Kunde", "Bestelldatum", "Versand", "Tracking", "Zustellung", "Versandregel", "Plattform", "1. Einladung", "2. Einladung", "3. Einladung", "Bewertung", "Kampagne"]}>
+        {reminderDue && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-hover px-4 py-3 text-sm">
+            <span>
+              {total === 0
+                ? "Aktuell ist keine Erinnerung fällig."
+                : `${total} Kunde(n) ohne bestätigte Bewertung, bei denen der Mindestabstand zur letzten E-Mail erreicht ist. Bitte vorher prüfen, ob schon bewertet wurde – bestätigte Bewertungen über „Bewertung bestätigen“ in der Bestellung eintragen.`}
+            </span>
+            {rows.length > 0 && (
+              <Button
+                disabled={busy}
+                onClick={() =>
+                  scheduleReminders(
+                    rows.filter((r) => r.reminderDue && r.campaignId).map((r) => r.campaignId!),
+                    `Erinnerung an ${rows.filter((r) => r.reminderDue).length} angezeigte Kunden einplanen?
+
+Bestätigung: Diese Kunden haben laut meiner Prüfung noch keine Bewertung abgegeben.`,
+                  )
+                }
+              >
+                Alle {rows.filter((r) => r.reminderDue).length} angezeigten einplanen
+              </Button>
+            )}
+          </div>
+        )}
+        <Table
+          head={[
+            header("Bestellung", "name"),
+            header("Kunde", "customer"),
+            header("Bestelldatum", "orderCreatedAt"),
+            header("Versand", "carrier"),
+            header("Tracking", "hasTracking"),
+            header("Zustellung", "deliveryStatus"),
+            header("Versandregel", "shippingRule"),
+            header("Plattform", "platform"),
+            header("1. Einladung", "invite1"),
+            header("2. Einladung", "invite2"),
+            header("3. Einladung", "invite3"),
+            header("Bewertung", "reviewStatus"),
+            header("Kampagne", "campaignStatus"),
+            "Erinnerung",
+          ]}
+        >
           {rows.map((r) => {
             const cs = r.campaignStatus ? CAMPAIGN_STATUS[r.campaignStatus] : null;
             return (
@@ -109,6 +210,22 @@ export default function OrdersPage() {
                 ))}
                 <Td>{r.reviewStatus ? REVIEW_STATUS[r.reviewStatus] : "–"}</Td>
                 <Td>{cs ? <Badge tone={cs.tone} title={r.campaignReason ?? undefined}>{cs.label}</Badge> : <span className="text-muted">–</span>}</Td>
+                <Td>
+                  {r.reminderDue && r.campaignId ? (
+                    <Button
+                      variant="secondary"
+                      disabled={busy}
+                      title={`Letzte E-Mail am ${fmtDate(r.reminderDue.lastSentAt)}`}
+                      onClick={() => scheduleReminders([r.campaignId!], `Erinnerung (${r.reminderDue!.step}. Kontakt) an ${r.customer ?? r.name} einplanen?
+
+Bestätigung: Dieser Kunde hat laut meiner Prüfung noch keine Bewertung abgegeben.`)}
+                    >
+                      {r.reminderDue.step}. Mail senden
+                    </Button>
+                  ) : (
+                    <span className="text-muted">–</span>
+                  )}
+                </Td>
               </tr>
             );
           })}

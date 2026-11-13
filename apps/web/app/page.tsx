@@ -6,6 +6,7 @@ import { Badge, Card, Input, Notice, Select, Stat, Table, Td } from "@/component
 import { api, CAMPAIGN_STATUS, fmtNum, fmtPct } from "@/lib/api";
 
 interface Dashboard {
+  remindersDue: number;
   stats: {
     orders: number;
     deliveredOrders: number;
@@ -108,6 +109,16 @@ export default function DashboardPage() {
 
       {s && (
         <>
+          {data!.remindersDue > 0 && (
+            <div className="mb-3">
+            <Notice tone="amber">
+              <a href="/bestellungen?erinnerung=1" className="font-medium underline underline-offset-2">
+                {data!.remindersDue === 1 ? "1 Erinnerung ist fällig" : `${data!.remindersDue} Erinnerungen sind fällig`}
+              </a>{" "}
+              – Kunden ohne bestätigte Bewertung, bei denen der Mindestabstand zur letzten E-Mail erreicht ist.
+            </Notice>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
             <Stat label="Shopify-Bestellungen" value={fmtNum(s.orders)} />
             <Stat label="Mit bestätigter Zustellung" value={fmtNum(s.deliveredOrders)} />

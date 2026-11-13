@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
-import { cancelCampaign, evaluateOrder, manualReminderCheck, markReviewReceived, pauseCampaign, resumeCampaign, scheduleManualReminder } from "../campaigns/engine.js";
+import { cancelCampaign, dueReminders, evaluateOrder, manualReminderCheck, markReviewReceived, pauseCampaign, resumeCampaign, scheduleManualReminder } from "../campaigns/engine.js";
 import { clickUrl, legalNotice, sendingBlockedReason, unsubscribeUrl } from "../campaigns/sender.js";
 import { config, shopifyConfigured } from "../config.js";
 import { findUnknownPlaceholders, renderEmail } from "../email/render.js";
@@ -56,6 +56,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return {
       range: r,
       stats: await dashboardStats(shopId(req), r),
+      remindersDue: (await dueReminders(shopId(req))).size,
       series: await dailySeries(shopId(req), r),
       sending: { enabled: rule.sendingEnabled, blockedReason: sendingBlockedReason(rule), transport: config().EMAIL_TRANSPORT, legalBasis: rule.legalBasis },
     };
@@ -65,50 +66,58 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // ─── Bestellungen ───
   app.get("/api/orders", async (req) => {
     const q = z
-      .object({ page: z.coerce.number().int().min(1).default(1), search: z.string().optional(), campaignStatus: z.string().optional(), deliveryStatus: z.string().optional() })
+      .object({
+        page: z.coerce.number().int().min(1).default(1),
+        search: z.string().optional(),
+        campaignStatus: z.string().optional(),
+        deliveryStatus: z.string().optional(),
+        invitationStatus: z.string().optional(),
+        reminderDue: z.enum(["true", "false"]).optional(),
+        sort: z.enum(ORDER_SORT_KEYS).default("orderCreatedAt"),
+        dir: z.enum(["asc", "desc"]).default("desc"),
+      })
       .parse(req.query);
     const where: Prisma.OrderWhereInput = { shopId: shopId(req) };
     if (q.search) where.OR = [{ name: { contains: q.search, mode: "insensitive" } }, { email: { contains: q.search.toLowerCase() } }, { lastName: { contains: q.search, mode: "insensitive" } }];
     if (q.deliveryStatus) where.deliveryStatus = q.deliveryStatus as Prisma.EnumDeliveryStatusFilter["equals"];
-    if (q.campaignStatus) where.campaign = { status: q.campaignStatus as Prisma.EnumCampaignStatusFilter["equals"] };
+    const campaignWhere: Prisma.ReviewCampaignWhereInput = {};
+    if (q.campaignStatus) campaignWhere.status = q.campaignStatus as Prisma.EnumCampaignStatusFilter["equals"];
+    if (q.invitationStatus) campaignWhere.invitations = { some: { status: q.invitationStatus as Prisma.EnumInvitationStatusFilter["equals"] } };
+    const due = await dueReminders(shopId(req));
+    if (q.reminderDue === "true") campaignWhere.id = { in: [...due.keys()] };
+    if (Object.keys(campaignWhere).length) where.campaign = campaignWhere;
     const pageSize = 50;
-    const [total, rows] = await Promise.all([
-      db().order.count({ where }),
-      db().order.findMany({
-        where,
-        orderBy: { orderCreatedAt: "desc" },
-        skip: (q.page - 1) * pageSize,
-        take: pageSize,
-        include: { campaign: { include: { platform: { select: { name: true } }, invitations: { orderBy: { step: "asc" } } } } },
+    // Sortierung über alle Spalten (auch Einladungsdaten) → in der Anwendung sortieren; Datenmenge pro Shop ist klein
+    const all = await db().order.findMany({
+      where,
+      orderBy: { orderCreatedAt: "desc" },
+      include: { campaign: { include: { platform: { select: { name: true } }, invitations: { orderBy: { step: "asc" } } } } },
+    });
+    const mapped = all.map((o) => ({
+      id: o.id,
+      name: o.name,
+      customer: [o.firstName, o.lastName].filter(Boolean).join(" ") || null,
+      orderCreatedAt: o.orderCreatedAt,
+      carrier: o.carrier,
+      isFreight: o.isFreight,
+      hasTracking: o.hasTracking,
+      deliveryStatus: o.deliveryStatus,
+      deliveredAt: o.deliveredAt,
+      channel: o.channel,
+      shippingRule: o.campaign?.shippingRule ?? null,
+      platform: o.campaign?.platform?.name ?? null,
+      invitations: [1, 2, 3].map((step) => {
+        const i = o.campaign?.invitations.find((x) => x.step === step);
+        return i ? { status: i.status, scheduledAt: i.scheduledAt, sentAt: i.sentAt } : null;
       }),
-    ]);
-    return {
-      total,
-      page: q.page,
-      pageSize,
-      rows: rows.map((o) => ({
-        id: o.id,
-        name: o.name,
-        customer: [o.firstName, o.lastName].filter(Boolean).join(" ") || null,
-        orderCreatedAt: o.orderCreatedAt,
-        carrier: o.carrier,
-        isFreight: o.isFreight,
-        hasTracking: o.hasTracking,
-        deliveryStatus: o.deliveryStatus,
-        deliveredAt: o.deliveredAt,
-        channel: o.channel,
-        shippingRule: o.campaign?.shippingRule ?? null,
-        platform: o.campaign?.platform?.name ?? null,
-        invitations: [1, 2, 3].map((step) => {
-          const i = o.campaign?.invitations.find((x) => x.step === step);
-          return i ? { status: i.status, scheduledAt: i.scheduledAt, sentAt: i.sentAt } : null;
-        }),
-        reviewStatus: o.campaign?.reviewStatus ?? null,
-        campaignId: o.campaign?.id ?? null,
-        campaignStatus: o.campaign?.status ?? null,
-        campaignReason: o.campaign?.statusReason ?? null,
-      })),
-    };
+      reviewStatus: o.campaign?.reviewStatus ?? null,
+      campaignId: o.campaign?.id ?? null,
+      campaignStatus: o.campaign?.status ?? null,
+      campaignReason: o.campaign?.statusReason ?? null,
+      reminderDue: (o.campaign && due.get(o.campaign.id)) ?? null,
+    }));
+    const sorted = sortOrderRows(mapped, q.sort, q.dir);
+    return { total: sorted.length, page: q.page, pageSize, rows: sorted.slice((q.page - 1) * pageSize, q.page * pageSize) };
   });
 
   app.get<{ Params: { id: string } }>("/api/orders/:id", async (req) => {
@@ -189,6 +198,25 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     return scheduleManualReminder(req.params.id, actor(req));
   });
 
+  // Sammel-Erinnerung: alle ausgewählten fälligen Kampagnen einplanen (Versand gedrosselt über den normalen Sender)
+  app.post("/api/campaigns/manual-reminders", write, async (req) => {
+    const body = z
+      .object({ campaignIds: z.array(z.string()).min(1).max(500), confirmNoReview: z.literal(true, { message: "Bitte bestätigen, dass keine Bewertung vorliegt" }) })
+      .parse(req.body ?? {});
+    let scheduled = 0;
+    const failed: { campaignId: string; reason: string }[] = [];
+    for (const id of body.campaignIds) {
+      try {
+        await ownCampaign(req, id);
+        await scheduleManualReminder(id, actor(req));
+        scheduled++;
+      } catch (err) {
+        failed.push({ campaignId: id, reason: (err as Error).message });
+      }
+    }
+    return { scheduled, failed };
+  });
+
   app.post<{ Params: { id: string } }>("/api/invitations/:id/reschedule", write, async (req) => {
     const inv = await db().reviewInvitation.findFirst({ where: { id: req.params.id, campaign: { shopId: shopId(req) } } });
     if (!inv) throw Object.assign(new Error("Einladung nicht gefunden"), { statusCode: 404 });
@@ -202,7 +230,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   // Test-E-Mail: NUR an hinterlegte Testempfänger, niemals an Kunden
   app.post("/api/test-email", write, async (req) => {
-    const body = z.object({ to: z.string().email(), step: z.number().int().min(1).max(3).default(1), platformId: z.string().uuid().optional() }).parse(req.body);
+    const body = z.object({ to: z.string().email(), step: z.number().int().min(1).max(3).default(1), platformId: z.string().uuid().optional(), scope: z.string().optional() }).parse(req.body);
     const rule = await db().reviewRule.findUniqueOrThrow({ where: { shopId: shopId(req) } });
     const to = body.to.toLowerCase();
     if (!rule.testRecipients.map((x) => x.toLowerCase()).includes(to)) {
@@ -212,7 +240,12 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       throw Object.assign(new Error("Diese Adresse gehört zu einer Kundenbestellung – Testversand nicht erlaubt"), { statusCode: 400 });
     }
     const shop = await db().shop.findUniqueOrThrow({ where: { id: shopId(req) } });
-    const platform = body.platformId ? await db().reviewPlatform.findFirst({ where: { id: body.platformId, shopId: shop.id } }) : null;
+    // Plattform per ID oder per Vorlagensatz (scope = Plattform-Key, z. B. IDEALO) → Test nutzt dieselbe Vorlage und denselben Link wie echte Mails
+    const platform = body.platformId
+      ? await db().reviewPlatform.findFirst({ where: { id: body.platformId, shopId: shop.id } })
+      : body.scope && body.scope !== "default"
+        ? await db().reviewPlatform.findFirst({ where: { key: body.scope as Prisma.EnumPlatformKeyFilter["equals"], shopId: shop.id } })
+        : null;
     const tpl =
       (platform && (await db().emailTemplate.findUnique({ where: { shopId_scope_step: { shopId: shop.id, scope: platform.key, step: body.step } } }))) ||
       (await db().emailTemplate.findUniqueOrThrow({ where: { shopId_scope_step: { shopId: shop.id, scope: "default", step: body.step } } }));
@@ -489,4 +522,56 @@ export async function releaseChecklist(shop: string) {
     "Judge.me-Einladungen können nicht synchronisiert werden (keine dokumentierte API). Kunden erhalten ggf. parallel eine Judge.me-Produktbewertungsanfrage und eine ReviewPilot-Händlerbewertungsanfrage." +
     (rule.considerJudgemeInvitations ? " Bereits abgegebene Judge.me-Bewertungen stoppen die ReviewPilot-Kampagne, sofern die Judge.me-Verbindung aktiv ist." : "");
   return { items, judgemeWarning, released: rule.sendingEnabled, releasedAt: rule.sendingReleasedAt, releasedBy: rule.sendingReleasedBy };
+}
+
+export const ORDER_SORT_KEYS = ["name", "customer", "orderCreatedAt", "carrier", "hasTracking", "deliveryStatus", "shippingRule", "platform", "invite1", "invite2", "invite3", "reviewStatus", "campaignStatus"] as const;
+type OrderSortKey = (typeof ORDER_SORT_KEYS)[number];
+type SortableRow = {
+  name: string;
+  customer: string | null;
+  orderCreatedAt: Date;
+  carrier: string | null;
+  hasTracking: boolean;
+  deliveryStatus: string;
+  deliveredAt: Date | null;
+  shippingRule: string | null;
+  platform: string | null;
+  invitations: ({ scheduledAt: Date; sentAt: Date | null } | null)[];
+  reviewStatus: string | null;
+  campaignStatus: string | null;
+};
+
+function sortValue(r: SortableRow, key: OrderSortKey): string | number | null {
+  switch (key) {
+    case "name":
+      return Number(r.name.replace(/\D/g, "")) || r.name;
+    case "orderCreatedAt":
+      return r.orderCreatedAt.getTime();
+    case "hasTracking":
+      return r.hasTracking ? 1 : 0;
+    case "invite1":
+    case "invite2":
+    case "invite3": {
+      const i = r.invitations[Number(key.slice(-1)) - 1];
+      return i ? (i.sentAt ?? i.scheduledAt).getTime() : null;
+    }
+    default:
+      return (r[key] as string | null)?.toLowerCase() ?? null;
+  }
+}
+
+/** Sortiert Bestellzeilen; leere Werte stehen immer am Ende, bei Gleichstand neueste Bestellung zuerst */
+export function sortOrderRows<T extends SortableRow>(rows: T[], key: OrderSortKey, dir: "asc" | "desc"): T[] {
+  const f = dir === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const va = sortValue(a, key);
+    const vb = sortValue(b, key);
+    if (va !== vb) {
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      if (typeof va === "number" && typeof vb === "number") return (va - vb) * f;
+      return String(va).localeCompare(String(vb), "de", { numeric: true }) * f;
+    }
+    return b.orderCreatedAt.getTime() - a.orderCreatedAt.getTime();
+  });
 }

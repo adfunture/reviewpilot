@@ -2,7 +2,7 @@ import { Prisma, type LegalBasis } from "@prisma/client";
 import { config } from "../config.js";
 import { MAX_LATE_HOURS } from "../domain/planner.js";
 import { reminderDecision } from "../domain/reminders.js";
-import { addDays, localYmd, zonedTime } from "../domain/time.js";
+import { addDays, intoSendWindow, localYmd, zonedTime } from "../domain/time.js";
 import { renderEmail, type LegalFooter } from "../email/render.js";
 import { EmailSendError, emailTransport } from "../email/transport.js";
 import { sign } from "../lib/crypto.js";
@@ -113,6 +113,13 @@ async function processInvitation(id: string, now: Date): Promise<boolean> {
   if (now.getTime() - inv.scheduledAt.getTime() > MAX_LATE_HOURS * 3600_000) {
     await skip("Versandzeitpunkt verstrichen");
     if (inv.step === 1) await prisma.reviewCampaign.update({ where: { id: campaign.id }, data: { status: "CANCELLED", statusReason: "Versandzeitpunkt verstrichen – keine rückwirkende Versendung", closedAt: now } });
+    return false;
+  }
+
+  // Nur innerhalb des Versandfensters versenden – auch überfällige Einladungen (z. B. nach einer Freigabe am Abend)
+  const windowAt = intoSendWindow(now, rule.sendWindowStartHour, rule.sendWindowEndHour, rule.timezone);
+  if (windowAt.getTime() > now.getTime()) {
+    await setInvitation(id, { status: "SCHEDULED", scheduledAt: windowAt, statusReason: "Außerhalb des Versandfensters – auf den nächsten Versandbeginn verschoben" });
     return false;
   }
 

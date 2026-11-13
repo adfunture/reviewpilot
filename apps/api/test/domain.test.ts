@@ -10,6 +10,7 @@ import { reviewUrlProblem, templatePolicyProblems } from "../src/domain/platform
 import { normalizeOrder } from "../src/shopify/mapper.js";
 import { orderGidFromWebhook, verifyShopifyHmac } from "../src/shopify/webhooks.js";
 import { ShopifyClient } from "../src/shopify/client.js";
+import { sortOrderRows } from "../src/routes/admin.js";
 
 const TZ = "Europe/Berlin";
 const S: RuleSettings = {
@@ -322,5 +323,24 @@ describe("Shopify", () => {
     expect(o.fulfillments[0]!.trackingNumber).toBe("A005D1F9");
     expect(o.email).toBe("a@b.de");
     expect(o.attribution.utmSource).toBe("idealo");
+  });
+});
+
+describe("Bestellliste sortieren", () => {
+  const row = (name: string, created: string, invite1: string | null, platform: string | null) => ({
+    name, customer: null, orderCreatedAt: new Date(created), carrier: null, hasTracking: false, deliveryStatus: "UNKNOWN", deliveredAt: null,
+    shippingRule: null, platform, invitations: [invite1 ? { scheduledAt: new Date(invite1), sentAt: null } : null, null, null], reviewStatus: null, campaignStatus: null,
+  });
+  const rows = [row("#998", "2026-11-01", "2026-11-20", "idealo"), row("#1000", "2026-11-03", null, null), row("#999", "2026-11-02", "2026-11-15", "Google Unternehmensprofil")];
+
+  it("Bestellnummer numerisch, nicht alphabetisch", () => {
+    expect(sortOrderRows(rows, "name", "asc").map((r) => r.name)).toEqual(["#998", "#999", "#1000"]);
+  });
+  it("1. Einladung: leere Werte immer am Ende", () => {
+    expect(sortOrderRows(rows, "invite1", "asc").map((r) => r.name)).toEqual(["#999", "#998", "#1000"]);
+    expect(sortOrderRows(rows, "invite1", "desc").map((r) => r.name)).toEqual(["#998", "#999", "#1000"]);
+  });
+  it("Plattform alphabetisch", () => {
+    expect(sortOrderRows(rows, "platform", "asc").map((r) => r.platform)).toEqual(["Google Unternehmensprofil", "idealo", null]);
   });
 });
