@@ -1,9 +1,10 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
-import { cancelCampaign, dueReminders, evaluateOrder, manualReminderCheck, markReviewReceived, pauseCampaign, resumeCampaign, scheduleManualReminder } from "../campaigns/engine.js";
+import { cancelCampaign, dueReminders, evaluateOrder, isSuppressed, manualReminderCheck, markReviewReceived, pauseCampaign, resumeCampaign, scheduleManualReminder } from "../campaigns/engine.js";
 import { clickUrl, legalNotice, sendingBlockedReason, unsubscribeUrl } from "../campaigns/sender.js";
 import { config, shopifyConfigured } from "../config.js";
+import { BLOCKED_REASON } from "../domain/planner.js";
 import { findUnknownPlaceholders, renderEmail } from "../email/render.js";
 import { reviewUrlProblem, templatePolicyProblems } from "../domain/platformLinks.js";
 import { emailTransport } from "../email/transport.js";
@@ -115,6 +116,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
       campaignStatus: o.campaign?.status ?? null,
       campaignReason: o.campaign?.statusReason ?? null,
       reminderDue: (o.campaign && due.get(o.campaign.id)) ?? null,
+      blocked: o.reviewBlocked,
     }));
     const sorted = sortOrderRows(mapped, q.sort, q.dir);
     return { total: sorted.length, page: q.page, pageSize, rows: sorted.slice((q.page - 1) * pageSize, q.page * pageSize) };
@@ -122,7 +124,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
 
   app.get<{ Params: { id: string } }>("/api/orders/:id", async (req) => {
     await ownOrder(req, req.params.id);
-    return db().order.findUniqueOrThrow({
+    const order = await db().order.findUniqueOrThrow({
       where: { id: req.params.id },
       include: {
         items: true,
@@ -132,6 +134,7 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
         reviewEvents: { orderBy: { occurredAt: "asc" } },
       },
     });
+    return { ...order, customerSuppressed: await isSuppressed(db(), order.shopId, order.email) };
   });
 
   app.post<{ Params: { id: string } }>("/api/orders/:id/confirm-delivery", write, async (req) => {
@@ -156,6 +159,19 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     const body = z.object({ reason: z.string().min(3) }).parse(req.body);
     await db().order.update({ where: { id: order.id }, data: { reviewBlocked: true, reviewBlockedReason: body.reason } });
     await audit(order.shopId, actor(req), "order.block", "order", order.id, body);
+    return { campaignStatus: await evaluateOrder(order.id) };
+  });
+
+  // Sperre aufheben: Kampagne wird nach den aktuellen Regeln neu bewertet (keine rückwirkende Versendung)
+  app.post<{ Params: { id: string } }>("/api/orders/:id/unblock", write, async (req) => {
+    const order = await ownOrder(req, req.params.id);
+    if (!order.reviewBlocked) throw Object.assign(new Error("Bestellung ist nicht gesperrt"), { statusCode: 400 });
+    await db().order.update({ where: { id: order.id }, data: { reviewBlocked: false, reviewBlockedReason: null } });
+    const c = await db().reviewCampaign.findUnique({ where: { orderId: order.id } });
+    if (c?.status === "CANCELLED" && c.statusReason === BLOCKED_REASON) {
+      await db().reviewCampaign.update({ where: { id: c.id }, data: { status: "PENDING", statusReason: null, closedAt: null } });
+    }
+    await audit(order.shopId, actor(req), "order.unblock", "order", order.id);
     return { campaignStatus: await evaluateOrder(order.id) };
   });
 

@@ -102,7 +102,7 @@ export function planCampaign(input: PlanInput, s: RuleSettings, platforms: Platf
     if (input.totalPrice > 0 && input.totalRefunded >= input.totalPrice) return { kind: "terminal", status: "CANCELLED", reason: "Vollständig erstattet" };
     if (input.deliveryStatus === "RETURNED") return { kind: "terminal", status: "CANCELLED", reason: "Retoure" };
   }
-  if (input.reviewBlocked) return { kind: "terminal", status: "CANCELLED", reason: "Bewertungsanfragen für diese Bestellung gesperrt" };
+  if (input.reviewBlocked) return { kind: "terminal", status: "CANCELLED", reason: BLOCKED_REASON };
   if (!input.email) return { kind: "terminal", status: "CANCELLED", reason: "Keine E-Mail-Adresse" };
   if (input.suppressed) return { kind: "terminal", status: "CANCELLED", reason: "Abgemeldet / Widerspruch / unzustellbar" };
 
@@ -149,6 +149,7 @@ export function untrackedAnchor(orderCreatedAt: Date, shippedAt: Date | null, s:
 
 /** Maximale Verspätung, ab der eine Stufe NICHT mehr automatisch nachgeholt wird (keine rückwirkende Massenversendung) */
 export const MAX_LATE_HOURS = 48;
+export const BLOCKED_REASON = "Bewertungsanfragen für diese Bestellung gesperrt";
 
 /**
  * Bewertet einen geplanten Zeitpunkt gegen "jetzt":

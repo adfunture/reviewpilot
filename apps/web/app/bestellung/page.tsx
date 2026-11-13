@@ -24,6 +24,8 @@ interface Detail {
   hasTracking: boolean;
   reviewBlocked: boolean;
   reviewBlockedReason: string | null;
+  email: string | null;
+  customerSuppressed: boolean;
   items: { id: string; title: string; quantity: number; sku: string | null }[];
   attribution: { utmSource: string | null; utmMedium: string | null; utmCampaign: string | null; referrerUrl: string | null; landingPage: string | null } | null;
   fulfillments: { id: string; carrier: string | null; trackingNumber: string | null; trackingUrl: string | null; displayStatus: string | null; shippedAt: string; trackingEvents: { id: string; status: string; happenedAt: string; source: string; message: string | null }[] }[];
@@ -81,6 +83,36 @@ function OrderDetail() {
       <PageTitle title={`Bestellung ${o.name}`} description={`${[o.firstName, o.lastName].filter(Boolean).join(" ") || "Kunde unbekannt"} · ${fmtDate(o.orderCreatedAt, true)} · ${Number(o.totalPrice).toLocaleString("de-DE", { style: "currency", currency: o.currency })}`} />
       <ErrorText error={error} />
       <div className="grid gap-6 xl:grid-cols-2">
+        <Card title="Sperre" description="Gesperrte Bestellungen bzw. Kunden erhalten keine Bewertungsanfragen und keine Erinnerungen.">
+          {o.customerSuppressed && <Notice tone="gray">Kunde ist dauerhaft gesperrt (Abmeldung, Widerspruch oder manuelle Sperre) – gilt für alle Bestellungen dieser E-Mail-Adresse.</Notice>}
+          {o.reviewBlocked && <Notice tone="gray">Diese Bestellung ist gesperrt: {o.reviewBlockedReason}</Notice>}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {o.reviewBlocked ? (
+              <Button variant="secondary" onClick={() => act(`/api/orders/${o.id}/unblock`, {}, "Sperre aufheben? Die Bestellung wird nach den aktuellen Regeln neu geplant (keine rückwirkende Versendung).")}>
+                Sperre aufheben
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  const reason = window.prompt("Grund der Sperre für diese Bestellung (z. B. Kundenwunsch, Reklamation in Klärung). Hinweis: Keine Sperre nur wegen erwarteter Unzufriedenheit.");
+                  if (reason && reason.trim().length >= 3) void act(`/api/orders/${o.id}/block`, { reason: reason.trim() });
+                }}
+              >
+                Diese Bestellung sperren
+              </Button>
+            )}
+            {!o.customerSuppressed && o.email && (
+              <Button
+                variant="danger"
+                onClick={() => act("/api/suppressions", { email: o.email, reason: "MANUAL" }, `Kunde ${o.email} dauerhaft sperren? Er erhält für keine Bestellung mehr Bewertungsanfragen. Aufheben ist nur über „Datenschutz & System“ möglich.`)}
+              >
+                Kunde dauerhaft sperren
+              </Button>
+            )}
+          </div>
+        </Card>
+
         <Card
           title="Bewertungskampagne"
           actions={cs && <Badge tone={cs.tone}>{cs.label}</Badge>}
@@ -209,25 +241,12 @@ function OrderDetail() {
           )}
         </Card>
 
-        <Card title="Artikel & Sperre">
+        <Card title="Artikel">
           <ul className="mb-4 text-sm">
             {o.items.map((i) => (
               <li key={i.id}>{i.quantity} × {i.title} <span className="text-muted">{i.sku}</span></li>
             ))}
           </ul>
-          {o.reviewBlocked ? (
-            <Notice tone="gray">Bewertungsanfragen gesperrt: {o.reviewBlockedReason}</Notice>
-          ) : (
-            <Button
-              variant="secondary"
-              onClick={() => {
-                const reason = window.prompt("Grund der Sperre (z. B. Kundenwunsch). Hinweis: Keine Sperre wegen erwarteter Unzufriedenheit.");
-                if (reason) void act(`/api/orders/${o.id}/block`, { reason });
-              }}
-            >
-              Bewertungsanfragen sperren
-            </Button>
-          )}
         </Card>
       </div>
     </>

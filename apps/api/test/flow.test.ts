@@ -413,6 +413,30 @@ describe("Phase-4-Szenarien", () => {
     expect((await campaign(id))?.status).toBe("REVIEW_RECEIVED");
   });
 
+  it("Bestellung sperren und Sperre wieder aufheben; Kundensperre wird im Detail angezeigt", async () => {
+    const id = await addOrder(shopId, { deliveredAt: "2026-12-01T14:00:00+01:00", email: "sperre@example.test" });
+    await evaluateOrder(id);
+    expect((await campaign(id))?.status).toBe("SCHEDULED");
+    const app = await buildApp({ serveWeb: false });
+    const cookie = await login(app, shopId);
+
+    const blocked = await app.inject({ method: "POST", url: `/api/orders/${id}/block`, headers: { cookie }, payload: { reason: "Kundenwunsch" } });
+    expect(blocked.json().campaignStatus).toBe("CANCELLED");
+    expect((await invitations(id)).every((i) => i.status === "CANCELLED")).toBe(true);
+    const list = await app.inject({ method: "GET", url: "/api/orders", headers: { cookie } });
+    expect(list.json().rows.find((r: { id: string }) => r.id === id).blocked).toBe(true);
+
+    const unblocked = await app.inject({ method: "POST", url: `/api/orders/${id}/unblock`, headers: { cookie } });
+    expect(unblocked.json().campaignStatus).toBe("SCHEDULED");
+    expect((await invitations(id)).some((i) => i.status === "SCHEDULED")).toBe(true);
+
+    await app.inject({ method: "POST", url: "/api/suppressions", headers: { cookie }, payload: { email: "sperre@example.test", reason: "MANUAL" } });
+    const detail = await app.inject({ method: "GET", url: `/api/orders/${id}`, headers: { cookie } });
+    expect(detail.json().customerSuppressed).toBe(true);
+    expect((await campaign(id))?.status).toBe("CANCELLED");
+    await app.close();
+  });
+
   it("Mandantentrennung: Kampagnen anderer Shops sind nicht erreichbar", async () => {
     const other = await setupShop("anderer-shop.myshopify.com");
     const id = await addOrder(other, { deliveredAt: "2026-12-01T14:00:00+01:00" });

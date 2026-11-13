@@ -23,6 +23,7 @@ interface Row {
   campaignReason: string | null;
   campaignId: string | null;
   reminderDue: { step: number; lastSentAt: string } | null;
+  blocked: boolean;
 }
 
 type SortKey = "name" | "customer" | "orderCreatedAt" | "carrier" | "hasTracking" | "deliveryStatus" | "shippingRule" | "platform" | "invite1" | "invite2" | "invite3" | "reviewStatus" | "campaignStatus";
@@ -51,6 +52,22 @@ export default function OrdersPage() {
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("erinnerung") === "1") setReminderDue(true);
   }, []);
+
+  async function blockOrder(r: Row) {
+    const reason = window.prompt(`Bewertungsanfragen für ${r.name} (${r.customer ?? "Kunde unbekannt"}) sperren.
+
+Grund (z. B. Kundenwunsch, Reklamation in Klärung):`);
+    if (!reason || reason.trim().length < 3) return;
+    setBusy(true);
+    try {
+      await api(`/api/orders/${r.id}/block`, { method: "POST", body: { reason: reason.trim() } });
+      await load();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function scheduleReminders(campaignIds: string[], confirmText: string) {
     if (!campaignIds.length || !window.confirm(confirmText)) return;
@@ -185,7 +202,7 @@ Bestätigung: Diese Kunden haben laut meiner Prüfung noch keine Bewertung abgeg
             header("3. Einladung", "invite3"),
             header("Bewertung", "reviewStatus"),
             header("Kampagne", "campaignStatus"),
-            "Erinnerung",
+            "Aktion",
           ]}
         >
           {rows.map((r) => {
@@ -222,8 +239,13 @@ Bestätigung: Dieser Kunde hat laut meiner Prüfung noch keine Bewertung abgegeb
                     >
                       {r.reminderDue.step}. Mail senden
                     </Button>
+                  ) : null}
+                  {r.blocked ? (
+                    <Badge tone="gray">gesperrt</Badge>
                   ) : (
-                    <span className="text-muted">–</span>
+                    <Button variant="ghost" disabled={busy} className="ml-1" onClick={() => blockOrder(r)}>
+                      Sperren
+                    </Button>
                   )}
                 </Td>
               </tr>
